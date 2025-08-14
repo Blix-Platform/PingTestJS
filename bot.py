@@ -1,26 +1,30 @@
 import discord
-from discord import app_commands
+from discord.ext import commands
 import os
 import time
 import psutil
-import speedtest
 from ping3 import ping
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-# Загружаем .env
+# Загружаем переменные окружения
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Настройка бота
+# Проверка токена
+if not TOKEN:
+    print("❌ Ошибка: DISCORD_TOKEN не найден в .env файле!")
+    exit()
+
+# Настройка интентов и бота
 intents = discord.Intents.default()
-bot = discord.Bot(intents=intents)
+intents.message_content = True  # обязательно для чтения сообщений
+
+# Используем commands.Bot вместо discord.Bot
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Время запуска
 start_time = datetime.now(timezone.utc)
-
-# ID сервера поддержки (если нужно)
-SUPPORT_SERVER_ID = 123456789012345678  # Замени на свой
 
 # Список сайтов для теста пинга
 TEST_SITES = [
@@ -31,11 +35,15 @@ TEST_SITES = [
     "cloudflare.com"
 ]
 
-# Цвета для embed
-COLOR = 0x5865F2  # Официальный цвет Discord
+
+# === on_ready — когда бот запускается
+@bot.event
+async def on_ready():
+    print(f"✅ {bot.user} успешно запущен!")
+    await bot.change_presence(activity=discord.Game(name="!ping | Тест пинга"))
 
 
-# === /ping — Основная команда пинга ===
+# === Команда: !ping
 @bot.slash_command(name="ping", description="🏓 Проверить пинг и состояние бота")
 async def ping(ctx):
     await ctx.defer(ephemeral=False)
@@ -74,7 +82,7 @@ async def ping(ctx):
     # Embed
     embed = discord.Embed(
         title="🏓 Состояние бота",
-        color=COLOR,
+        color=0x5865F2,
         timestamp=datetime.now(timezone.utc)
     )
 
@@ -111,71 +119,53 @@ async def ping(ctx):
     )
 
     embed.set_thumbnail(url=bot.user.display_avatar.url)
-    embed.set_footer(text="PingTest Bot • Тест производительности", icon_url=bot.user.display_avatar.url)
+    embed.set_footer(text="PingTest Bot • Диагностика", icon_url=bot.user.display_avatar.url)
 
     await ctx.respond(embed=embed)
 
 
-# === /system — Состояние VPS ===
-@bot.slash_command(name="system", description="🖥️ Показать состояние сервера (CPU, RAM, диск)")
+# === Команда: !system
+@bot.slash_command(name="system", description="🖥️ Показать состояние сервера")
 async def system(ctx):
     await ctx.defer(ephemeral=False)
 
-    # CPU
     cpu_usage = psutil.cpu_percent()
-
-    # RAM
     ram = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+
     ram_used = ram.used / (1024**3)
     ram_total = ram.total / (1024**3)
-    ram_percent = ram.percent
-
-    # Диск
-    disk = psutil.disk_usage('/')
     disk_used = disk.used / (1024**3)
     disk_total = disk.total / (1024**3)
-    disk_percent = disk.percent
-
-    # Температура (если доступно)
-    try:
-        temps = psutil.sensors_temperatures()
-        temp = temps.get('coretemp', [{}])[0].get('current', 'N/A') if temps else 'N/A'
-    except:
-        temp = 'N/A'
 
     embed = discord.Embed(
         title="🖥️ Состояние сервера",
-        color=COLOR,
+        color=0x5865F2,
         timestamp=datetime.now(timezone.utc)
     )
 
     embed.add_field(
         name="⚡ CPU",
-        value=f"```{cpu_usage}% загружено```",
+        value=f"```{cpu_usage}%```",
         inline=False
     )
     embed.add_field(
         name="💾 RAM",
-        value=f"```{ram_used:.1f} ГБ / {ram_total:.1f} ГБ ({ram_percent}%)```",
+        value=f"```{ram_used:.1f} ГБ / {ram_total:.1f} ГБ ({ram.percent}%)```",
         inline=False
     )
     embed.add_field(
         name="💽 Диск",
-        value=f"```{disk_used:.1f} ГБ / {disk_total:.1f} ГБ ({disk_percent}%)```",
-        inline=False
-    )
-    embed.add_field(
-        name="🌡️ Температура",
-        value=f"```{temp}°C```",
+        value=f"```{disk_used:.1f} ГБ / {disk_total:.1f} ГБ ({disk.percent}%)```",
         inline=False
     )
 
-    embed.set_footer(text="PingTest Bot • Мониторинг VPS", icon_url=bot.user.display_avatar.url)
+    embed.set_footer(text="PingTest Bot • Мониторинг", icon_url=bot.user.display_avatar.url)
     await ctx.respond(embed=embed)
 
 
-# === /pingtest — Пинг до сайтов ===
-@bot.slash_command(name="pingtest", description="🌐 Протестировать пинг до популярных сайтов")
+# === Команда: !pingtest
+@bot.slash_command(name="pingtest", description="🌐 Проверить пинг до сайтов")
 async def pingtest(ctx):
     await ctx.defer(ephemeral=False)
 
@@ -185,12 +175,7 @@ async def pingtest(ctx):
             delay = ping(site, timeout=2)
             if delay is not None:
                 delay_ms = delay * 1000
-                if delay_ms < 100:
-                    emoji = "🟢"
-                elif delay_ms < 300:
-                    emoji = "🟡"
-                else:
-                    emoji = "🔴"
+                emoji = "🟢" if delay_ms < 100 else "🟡" if delay_ms < 300 else "🔴"
                 results.append(f"{emoji} `{site:15}` → `{delay_ms:6.1f} мс`")
             else:
                 results.append(f"🔴 `{site:15}` → `Таймаут`")
@@ -200,47 +185,31 @@ async def pingtest(ctx):
     embed = discord.Embed(
         title="🌐 Тест пинга до сайтов",
         description="\n".join(results),
-        color=COLOR,
+        color=0x5865F2,
         timestamp=datetime.now(timezone.utc)
     )
     embed.set_footer(text="PingTest Bot • Сеть", icon_url=bot.user.display_avatar.url)
     await ctx.respond(embed=embed)
 
 
-# === /uptime — Аптайм бота ===
-@bot.slash_command(name="uptime", description="⏱️ Показать время работы бота")
+# === Команда: !uptime
+@bot.slash_command(name="uptime", description="⏱️ Показать аптайм бота")
 async def uptime_cmd(ctx):
     uptime = datetime.now(timezone.utc) - start_time
     hours, rem = divmod(int(uptime.total_seconds()), 3600)
     mins, sec = divmod(rem, 60)
     days, hours = divmod(hours, 24)
-    if days:
-        uptime_str = f"{days} дней, {hours} часов"
-    elif hours:
-        uptime_str = f"{hours} часов, {mins} минут"
-    else:
-        uptime_str = f"{mins} минут"
+    uptime_str = f"{days}д {hours}ч" if days else f"{hours}ч {mins}м"
 
     embed = discord.Embed(
         title="⏱️ Аптайм бота",
-        description=f"Бот работает уже **{uptime_str}**",
-        color=COLOR,
+        description=f"Бот работает: **{uptime_str}**",
+        color=0x5865F2,
         timestamp=datetime.now(timezone.utc)
     )
     embed.set_footer(text="PingTest Bot", icon_url=bot.user.display_avatar.url)
     await ctx.respond(embed=embed)
 
 
-# === Онлайн-статус бота ===
-@bot.event
-async def on_ready():
-    print(f"✅ {bot.user} готов!")
-    await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.watching,
-        name="за пингом"
-    ))
-
-
-# Запуск
+# Запуск бота
 bot.run(TOKEN)
-#понятно что нужно использовать env но для тестов сойдет
