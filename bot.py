@@ -34,13 +34,23 @@ async def on_ready():
     await bot.change_presence(activity=discord.Game(name="!ping | Тест пинга"))
     await bot.tree.sync()
 
+import asyncio
+
 @bot.tree.command(name="ping", description="🏓 Проверить пинг и состояние бота")
 async def ping_cmd(interaction):
     await interaction.response.defer(ephemeral=False)
 
     ws_ping = bot.latency * 1000
     start = time.time()
-    await interaction.followup.send("⏳", delete_after=0.1)
+
+    # Отправляем временный символ и удаляем его вручную
+    msg = await interaction.followup.send("⏳")
+    await asyncio.sleep(0.1)
+    try:
+        await msg.delete()
+    except:
+        pass  # Сообщение уже могло исчезнуть
+
     cmd_ping = (time.time() - start) * 1000
 
     api_start = time.time()
