@@ -1,5 +1,0 @@
-discord.py
-python-dotenv
-psutil
-speedtest-cli
-ping3
